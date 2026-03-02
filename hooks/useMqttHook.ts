@@ -1,22 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import mqtt, { MqttClient } from 'mqtt';
 
-const MQTT_OPTIONS:any = {
-  keepalive: 60,
-  protocolId: 'MQTT',
-  protocolVersion: 4,
-  clean: true,
-  reconnectPeriod: 1000,
-  connectTimeout: 30 * 1000,
-};
-
 export const useMqtt = (brokerUrl: string, topics: string[]) => {
   const [client, setClient] = useState<MqttClient | null>(null);
   const [messages, setMessages] = useState<Record<string, any>>({});
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const mqttClient = mqtt.connect(brokerUrl, MQTT_OPTIONS);
+    // FIX: Ensure this only runs on the client side
+    if (typeof window === "undefined") return;
+
+    // FIX: Force wss if the site is on HTTPS (Vercel)
+    const secureUrl = brokerUrl.replace("ws://", "wss://");
+    
+    const options = {
+      connectTimeout: 4000,
+      reconnectPeriod: 1000,
+      path: '/mqtt', // Required for many brokers like EMQX/HiveMQ
+    };
+
+    const mqttClient = mqtt.connect(secureUrl, options);
 
     mqttClient.on('connect', () => {
       setIsConnected(true);
@@ -33,7 +36,7 @@ export const useMqtt = (brokerUrl: string, topics: string[]) => {
     });
 
     mqttClient.on('error', (err) => {
-      console.error('MQTT Error:', err);
+      console.error('Connection error: ', err);
       mqttClient.end();
     });
 
@@ -42,7 +45,7 @@ export const useMqtt = (brokerUrl: string, topics: string[]) => {
     return () => {
       if (mqttClient) mqttClient.end();
     };
-  }, [brokerUrl]);
+  }, []); // Empty dependency array to prevent multiple connections
 
   const publish = useCallback((topic: string, message: string) => {
     if (client) client.publish(topic, message);

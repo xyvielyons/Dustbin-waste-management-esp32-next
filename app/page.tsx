@@ -11,10 +11,11 @@ import Image from "next/image";
 import { logo } from "@/public/images";
 
 export default function SmartBinNexus() {
-  const { messages, isConnected, publish } = useMqtt("ws://broker.emqx.io:8083/mqtt", [
+  const { messages, isConnected, publish } = useMqtt("wss://broker.emqx.io:8084/mqtt", [
     "smartbin/status/bin1",
     "smartbin/status/bin2",
   ]);
+
 
   // Track the timestamp of the last message for each bin
   const [lastSeen, setLastSeen] = useState<Record<string, number>>({});
@@ -137,7 +138,7 @@ export default function SmartBinNexus() {
                 <span className="font-black text-zinc-900 tracking-widest text-[10px] uppercase">National Environment Management Authority Waste Management NEMA</span>
               </div>
               <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-zinc-900 uppercase italic leading-tight">
-                Oloolaiser High Waste Management Portal
+                Oloolaiser High School Waste Management Portal
               </h1>
             </div>
           </div>
