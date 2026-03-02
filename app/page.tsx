@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react"; // Added useRef for auto-scroll
 import { useMqtt } from "@/hooks/useMqttHook";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Trash2, Radio, RotateCcw, Activity, MapPin, Layers, Unlock, Lock, WifiOff, Loader2 } from "lucide-react";
+import { Trash2, Radio, RotateCcw, Activity, MapPin, Layers, Unlock, Lock, WifiOff, Loader2, Terminal, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import { logo } from "@/public/images";
 
@@ -16,16 +16,46 @@ export default function SmartBinNexus() {
     "smartbin/status/bin2",
   ]);
 
-  
-  // Track the timestamp of the last message for each bin
   const [lastSeen, setLastSeen] = useState<Record<string, number>>({});
+  const [logs, setLogs] = useState<{ time: string; msg: string; type: 'info' | 'warn' | 'success' }[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Function to add a new log entry
+  const addLog = (msg: string, type: 'info' | 'warn' | 'success' = 'info') => {
+    const time = new Date().toLocaleTimeString();
+    setLogs((prev) => [{ time, msg, type }, ...prev].slice(0, 50)); // Keep last 50 logs
+  };
+
+  // Monitor Incoming Messages for Logs
   useEffect(() => {
     const now = Date.now();
     Object.keys(messages).forEach((topic) => {
+      const id = topic.endsWith('bin1') ? "Kajiado" : "Kawangware";
+      const data = messages[topic];
+      
+      // Update Heartbeat
       setLastSeen((prev) => ({ ...prev, [topic]: now }));
+
+      // Add Log for new data
+      addLog(`Heartbeat received from ${id}: Fill at ${data.fill}cm`, 'info');
+      
+      if (data.full === "true") {
+        addLog(`CRITICAL: ${id} Bin is reaching maximum capacity!`, 'warn');
+      }
     });
   }, [messages]);
+
+  // Monitor Connection Status for Logs
+  useEffect(() => {
+    if (isConnected) addLog("Uplink Established: MQTT Protocol Synchronized", "success");
+    else addLog("Uplink Interrupted: Attempting Reconnection...", "warn");
+  }, [isConnected]);
+
+  const handlePublish = (id: string) => {
+    const location = id === "1" ? "Kajiado" : "Kawangware";
+    publish(`smartbin/cmd/bin${id}`, "OPEN");
+    addLog(`Command Sent: Initializing Service Hatch for ${location}`, "success");
+  };
 
   const renderBinCard = (id: string, topic: string) => {
     const data = messages[topic];
