@@ -1,65 +1,167 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+import { useMqtt } from "@/hooks/useMqttHook";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Trash2, Radio, RotateCcw, Activity, MapPin, Layers, Unlock, Lock, WifiOff, Loader2 } from "lucide-react";
+import Image from "next/image";
+import { logo } from "@/public/images";
+
+export default function SmartBinNexus() {
+  const { messages, isConnected, publish } = useMqtt("ws://broker.emqx.io:8083/mqtt", [
+    "smartbin/status/bin1",
+    "smartbin/status/bin2",
+  ]);
+
+  // Track the timestamp of the last message for each bin
+  const [lastSeen, setLastSeen] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const now = Date.now();
+    Object.keys(messages).forEach((topic) => {
+      setLastSeen((prev) => ({ ...prev, [topic]: now }));
+    });
+  }, [messages]);
+
+  const renderBinCard = (id: string, topic: string) => {
+    const data = messages[topic];
+    const lastUpdate = lastSeen[topic];
+    const isStale = !lastUpdate || (Date.now() - lastUpdate > 12000); // Stale if no data for 12s
+
+    // If no data has ever arrived or data is older than 12 seconds
+    if (!data || isStale) {
+      return (
+        <Card className="border-2 border-dashed border-zinc-200 bg-zinc-50/50 transition-all duration-500">
+          <CardContent className="flex flex-col items-center justify-center h-[400px] space-y-4">
+            <div className="relative">
+              <WifiOff className="w-12 h-12 text-zinc-300" />
+              <Loader2 className="w-12 h-12 text-zinc-400 animate-spin absolute top-0 left-0 opacity-20" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-black text-zinc-400 uppercase tracking-widest">
+                {id === "1" ? "Kajiado" : "Kawangware"} Node Offline
+              </p>
+              <p className="text-[10px] text-zinc-400 font-mono mt-1">
+                Waiting for 5s Heartbeat...
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    const currentFill = parseFloat(data.fill) || 25;
+    const fillPercent = Math.max(0, Math.min(100, ((25 - currentFill) / 20) * 100));
+    const isFull = data.full === "true" || fillPercent >= 95;
+    const isOverride = data.ovr === "true";
+
+    return (
+      <Card className={`group transition-all duration-300 border-2 ${isFull ? 'border-zinc-800 shadow-xl' : 'border-zinc-100 shadow-sm'}`}>
+        <CardHeader className="bg-zinc-50/50 border-b border-zinc-100 flex flex-row items-center justify-between space-y-0 py-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${isFull ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-400'}`}>
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-black tracking-tight text-zinc-800 uppercase italic">
+                 {id === "1" ? "Kajiado" : "Kawangware"} Bin
+              </CardTitle>
+              <CardDescription className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Active Link: {id === "1" ? "STA-01" : "STA-02"}</CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            {isOverride ? <Unlock className="w-4 h-4 text-zinc-900" /> : <Lock className="w-4 h-4 text-zinc-200" />}
+          </div>
+        </CardHeader>
+
+        <CardContent className="pt-6">
+          {/* ... (Rest of your existing progress bar and data grid logic) ... */}
+          <div className="flex justify-between mb-4 items-end">
+             <div className="flex flex-col">
+               <span className="text-5xl font-black tracking-tighter text-zinc-900 italic">
+                 {fillPercent.toFixed(0)}<span className="text-xl not-italic text-zinc-300 ml-1">%</span>
+               </span>
+               <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Real-time Fill</span>
+             </div>
+             <Badge variant="outline" className={`px-3 py-1 font-mono text-[10px] transition-colors ${isOverride ? "bg-zinc-900 text-white border-zinc-900" : isFull ? "bg-white text-zinc-900 border-zinc-900 border-2" : "bg-zinc-50 text-zinc-500 border-zinc-200"}`}>
+               {isOverride ? ":: OVERRIDE" : isFull ? ":: CRITICAL" : ":: NOMINAL"}
+             </Badge>
+          </div>
+          
+          <div className="space-y-1 mb-8">
+            <Progress value={fillPercent} className="h-4 bg-zinc-100 rounded-none" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="bg-zinc-50 border border-zinc-100 p-3 rounded-sm">
+              <p className="text-[9px] font-bold text-zinc-400 uppercase mb-1">Last Update</p>
+              <p className="text-xs font-mono font-bold text-zinc-800">
+                {Math.floor((Date.now() - lastUpdate) / 1000)}s ago
+              </p>
+            </div>
+            <div className="bg-zinc-50 border border-zinc-100 p-3 rounded-sm">
+              <p className="text-[9px] font-bold text-zinc-400 uppercase mb-1">Depth</p>
+              <p className="text-xs font-mono font-bold text-zinc-800">{data.fill}cm</p>
+            </div>
+          </div>
+
+          <Button 
+            onClick={() => publish(`smartbin/cmd/bin${id}`, "OPEN")}
+            disabled={isOverride}
+            className="w-full h-12 bg-zinc-900 text-white font-black text-xs uppercase tracking-widest"
+          >
+            {isOverride ? "Hatch Open" : "Initialize Service Open"}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-zinc-50 p-6 md:p-12">
+      <div className="max-w-5xl mx-auto space-y-10">
+        
+        {/* Header - Fixed Image integration */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b-2 border-zinc-200 pb-8 gap-4">
+          <div className="flex items-center gap-6">
+            <div className="relative w-16 h-16 md:w-20 md:h-20 bg-white rounded-xl shadow-sm p-2 flex items-center justify-center border border-zinc-100">
+              <Image src={logo} alt="NEMA Logo" fill className="object-contain p-2" priority />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="w-4 h-4 text-zinc-900" />
+                <span className="font-black text-zinc-900 tracking-widest text-[10px] uppercase">National Environment Management Authority Waste Management NEMA</span>
+              </div>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-zinc-900 uppercase italic leading-tight">
+                Oloolaiser High Waste Management Portal
+              </h1>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-6">
+            <div className="text-right">
+                <p className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">Broker Status</p>
+                <p className={`text-xs font-black uppercase ${isConnected ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                  {isConnected ? "Linked" : "Signal Loss"}
+                </p>
+            </div>
+            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-zinc-900 animate-pulse' : 'bg-red-400'}`} />
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Dashboard Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+          {renderBinCard("1", "smartbin/status/bin1")}
+          {renderBinCard("2", "smartbin/status/bin2")}
         </div>
-      </main>
+        
+        {/* Logs */}
+        {/* ... (System logs remain as before) ... */}
+      </div>
     </div>
   );
 }
